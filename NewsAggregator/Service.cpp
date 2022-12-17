@@ -1,19 +1,15 @@
 ﻿#include <iostream>
 #include <fstream>
 #include <sstream>
-#include <algorithm>
 #include <cctype>
 #include "../packages/curl/include/curl/curl.h"
 #include "Service.h"
+#include "Utils.h"
 
-static void trim(string& s);
-static int number = 0;
-static int counter = 0;
-
-mutex Service::mtx;
 vector<thread> threads;
-vector<string> Service::resources;
-vector<string> Service::tempFiles;
+mutex Service::createFileMtx;
+mutex Service::addAriticleMtx;
+map<string, string> Service::store;
 unordered_set<Article, Article::ArtileHash> Service::feed;
 const char* Service::CONFIG_PATH = "config.ini";
 
@@ -22,46 +18,33 @@ Service& Service::getInstance() {
 	return instance;
 }
 
-
 void Service::init() {
-	if (Service::readConfigFile()) {
-		updateNews();
-	}
-}
-
-void Service::updateNews() {
-	feed.clear();
-	threads.clear();
-	number = 0;
-
-	string fileName;
-	ostringstream os;
-	for (string url : resources) {
-		threads.push_back(thread([&, url]() {
-			fileName = createTempFile(os);
-		getResponse(url, fileName);
-		saveResponse(fileName);
-			}));
-	}
-	for (int i = 0; i < threads.size(); i++) {
-		threads[i].join();
+	while (!Service::readConfigFile()) {
+		cout << "The configuration file does not contain valid links." << endl;
+		cout << "Without it, it is impossible to continue working." << endl;
+		cout << "Want to create your own configuration? (1)" << endl;
+		bool input;
+		cin >> input;
+		if (!input || !writeConfigFile()) {
+			return;
+		}
 	}
 }
 
 void Service::run() {
-	string keyWord;
 	unordered_set<Article, Article::ArtileHash> matches;
+	string keyWord;
+	int counter = 0;
 	while (true) {
 		cout << "\nEnter a word to search for news (or an empty string to exit): ";
 		getline(cin, keyWord);
-		cin >> keyWord;
-		trim(keyWord);
+		Utils::trim(keyWord);
 		if (keyWord.empty()) {
 			break;
 		}
 
 		if (++counter % 2 == 0) {
-			cout << "Updating..." << endl;
+			cout << "Updating news..." << endl;
 			updateNews();
 		}
 
@@ -78,8 +61,8 @@ void Service::run() {
 		}
 	};
 
-	for (string file : tempFiles) {
-		remove(file.c_str());
+	for (auto resource : store) {
+		remove(resource.second.c_str());
 	}
 }
 
@@ -92,23 +75,28 @@ bool Service::readConfigFile() {
 		bool input;
 		cin >> input;
 		if (!input || !writeConfigFile()) {
-			cout << "Shutdown..." << endl;
 			return false;
 		}
+		fileSource.open(CONFIG_PATH);
 	}
 
-	int resourceCount = 0;
+	string url;
+	string fileName;
 	string buffer;
+	int resourcesCount = 0;
+	cout << "Please wait until we upload the necessary files." << endl;
 	while (fileSource >> buffer)
 	{
-		if (isValidResource(buffer)) {
-			++resourceCount;
-			resources.push_back(buffer);
+		url = buffer;
+		fileName = Utils::getDomainName(url);
+		if (isValidResource(url, fileName)) {
+			++resourcesCount;
+			store[url] = fileName;
 		}
 	}
-
-	cout << "Resources available: " << resourceCount << endl;
-	return resourceCount != 0;
+	fileSource.close();
+	cout << "Resources available: " << resourcesCount << endl;
+	return resourcesCount != 0;
 }
 
 bool Service::writeConfigFile() {
@@ -116,24 +104,25 @@ bool Service::writeConfigFile() {
 	cout << "https://rss.nytimes.com/services/xml/rss/nyt/Europe.xml" << endl;
 
 	ofstream fileSink(CONFIG_PATH);
-
 	if (!fileSink) {
 		cout << "Failed to create configuration file. Shutdown..." << endl;
 		return false;
 	}
 
-	cout << "Enter an empty string to complete input!" << endl;
+	cout << "Enter 0 to complete the input!" << endl;
 	string output;
-	cin >> output;
-	while (!output.empty()) {
-		fileSink << output << endl;
+	do {
 		getline(cin, output);
-	}
+		fileSink << output << endl;
+	} while (output[0] != '0');
 	return true;
 }
 
-bool Service::isValidResource(string resource) {
-	return resource.find("xml") != string::npos || resource.find("rss") != string::npos;
+bool Service::isValidResource(string url, string path) {
+	getResponse(url, path);
+	saveResponse(path);
+	std::ifstream in(path, std::ifstream::ate | std::ifstream::binary);
+	return in.tellg();
 }
 
 unordered_set<Article, Article::ArtileHash> Service::getMatchingArticles(string keyWord) {
@@ -168,31 +157,35 @@ void Service::getResponse(string url, string path)
 	}
 }
 
-string Service::createTempFile(ostringstream& os) {
-	mtx.lock();
-	string fileName;
-	fileName.append("temp");
-	fileName.append(to_string(++number));
-	fileName.append(".xml");
-	tempFiles.push_back(fileName);
-	os << fileName;
-	mtx.unlock();
-	return fileName;
-}
-
-void Service::saveResponse(string file) {
+void Service::saveResponse(string path) {
 	pugi::xml_document document;
-	document.load_file(file.c_str());
+	document.load_file(path.c_str());
 	for (pugi::xml_node node : document.child("rss").child("channel").children()) {
 		if (strcmp("item", string(node.name()).c_str()) == 0) {
-			mtx.lock();
+			addAriticleMtx.lock();
 			feed.insert(Article(node));
-			mtx.unlock();
+			addAriticleMtx.unlock();
 		}
 	}
 }
 
-static void trim(string& s) {
-	s.erase(s.begin(), find_if_not(s.begin(), s.end(), [](char c) { return isspace(c); }));
-	s.erase(find_if_not(s.rbegin(), s.rend(), [](char c) { return isspace(c); }).base(), s.end());
+void Service::updateNews() {
+	feed.clear();
+	threads.clear();
+
+	string url;
+	string fileName;
+	ostringstream os;
+	for (auto resource : store) {
+		url = resource.first;
+		fileName = resource.second;
+		threads.push_back(thread([url, fileName]() {
+			getResponse(url, fileName);
+		saveResponse(fileName);
+			}));
+	}
+
+	for (int i = 0; i < threads.size(); i++) {
+		threads[i].join();
+	}
 }

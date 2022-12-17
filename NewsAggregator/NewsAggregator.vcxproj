@@ -139,10 +139,12 @@
   <ItemGroup>
     <ClCompile Include="NewsAggregator.cpp" />
     <ClCompile Include="Service.cpp" />
+    <ClCompile Include="Utils.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Article.h" />
     <ClInclude Include="Service.h" />
+    <ClInclude Include="Utils.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
