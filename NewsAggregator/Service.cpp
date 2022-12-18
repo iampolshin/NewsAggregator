@@ -7,11 +7,11 @@
 #include "Utils.h"
 
 vector<thread> threads;
-mutex Service::createFileMtx;
 mutex Service::addAriticleMtx;
 map<string, string> Service::store;
-unordered_set<Article, Article::ArtileHash> Service::feed;
+unordered_set<Article, Article::ArtiсleHash> Service::feed;
 const char* Service::CONFIG_PATH = "config.ini";
+static const int STEP = 3;
 
 Service& Service::getInstance() {
 	static Service instance;
@@ -32,7 +32,7 @@ void Service::init() {
 }
 
 void Service::run() {
-	unordered_set<Article, Article::ArtileHash> matches;
+	unordered_set<Article, Article::ArtiсleHash> matches;
 	string keyWord;
 	int counter = 0;
 	while (true) {
@@ -43,7 +43,7 @@ void Service::run() {
 			break;
 		}
 
-		if (++counter % 2 == 0) {
+		if (++counter % STEP == 0) {
 			cout << "Updating news..." << endl;
 			updateNews();
 		}
@@ -55,7 +55,7 @@ void Service::run() {
 		}
 
 		cout << matches.size() << " news found for this word:" << endl;
-		unordered_set<Article, Article::ArtileHash>::iterator it = matches.begin();
+		unordered_set<Article, Article::ArtiсleHash>::iterator it = matches.begin();
 		for (int i = 1; it != matches.end(); ++it, ++i) {
 			cout << i << ".) \"" << (*it).title << "\" [" << (*it).url << "]" << endl;
 		}
@@ -125,8 +125,8 @@ bool Service::isValidResource(string url, string path) {
 	return in.tellg();
 }
 
-unordered_set<Article, Article::ArtileHash> Service::getMatchingArticles(string keyWord) {
-	unordered_set<Article, Article::ArtileHash> matches;
+unordered_set<Article, Article::ArtiсleHash> Service::getMatchingArticles(string keyWord) {
+	unordered_set<Article, Article::ArtiсleHash> matches;
 	Article tempArticle;
 	for (Article article : feed) {
 		if (article.title.find(keyWord) != string::npos || article.desc.find(keyWord) != string::npos) {

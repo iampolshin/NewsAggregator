@@ -6,7 +6,7 @@ using namespace std;
 
 struct Article
 {
-	struct ArtileHash
+	struct ArtiñleHash
 	{
 		int operator()(const Article& article) const
 		{

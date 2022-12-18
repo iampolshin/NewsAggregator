@@ -7,9 +7,8 @@
 
 class Service {
 private:
-	static unordered_set<Article, Article::ArtileHash> feed;
+	static unordered_set<Article, Article::ArtiñleHash> feed;
 	static map<string, string> store;
-	static mutex createFileMtx;
 	static mutex addAriticleMtx;
 
 	Service() {};
@@ -28,5 +27,5 @@ public:
 	static Service& getInstance();
 	static void init();
 	static void run();
-	static unordered_set<Article, Article::ArtileHash> getMatchingArticles(string);
+	static unordered_set<Article, Article::ArtiñleHash> getMatchingArticles(string);
 };
